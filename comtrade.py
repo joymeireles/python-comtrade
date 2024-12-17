@@ -36,14 +36,12 @@ import warnings
 
 try:
     import numpy
-
     _HAS_NUMPY = True
 except ModuleNotFoundError:
     _HAS_NUMPY = False
 
 try:
     import pandas as pd
-
     _HAS_PANDAS = True
 except ModuleNotFoundError:
     _HAS_PANDAS = False
@@ -51,8 +49,11 @@ except ModuleNotFoundError:
 
 # COMTRADE standard revisions
 REV_1991 = "1991"
+REV_1997 = "1997"
+REV_1998 = "1998"
 REV_1999 = "1999"
 REV_2001 = "2001"
+REV_2011 = "2011"
 REV_2013 = "2013"
 
 # DAT file format types
@@ -97,9 +98,12 @@ def _read_sep_values(line, expected: int = -1, default: str = ''):
 
 def _preallocate_values(array_type, size, use_numpy_arrays):
     type_mapping_numpy = {"f": "float32", "d": "float64", "i": "int32", "l": "int64"}
-    if _HAS_NUMPY and use_numpy_arrays:
-        return numpy.zeros(size, dtype=type_mapping_numpy[array_type])
-    return array.array(array_type, [0]) * size
+    try:
+        if _HAS_NUMPY and use_numpy_arrays:
+            return numpy.zeros(size, dtype=type_mapping_numpy[array_type])
+        return array.array(array_type, [0]) * size
+    except Exception as e:
+        print(f"def prealocate {e}")
 
 
 def _prevent_null(str_value: str, value_type: type, default_value):
@@ -383,7 +387,7 @@ class Cfg:
 
         if os.path.isfile(self._file_path):
             filtered_kwargs = {
-                "encoding": kwargs.get("encoding", "utf-8")
+                "encoding": kwargs.get("encoding", "ANSI") #"utf-8")
             }
             with open(self._file_path, "r", **filtered_kwargs) as cfg:
                 self._read_io(cfg)
@@ -415,7 +419,7 @@ class Cfg:
             self._station_name, self._rec_dev_id, self._rev_year = packed
             self._rev_year = self._rev_year.strip()
 
-            if self._rev_year not in (REV_1991, REV_1999, REV_2001, REV_2013):
+            if self._rev_year not in (REV_1991, REV_1997, REV_1998, REV_1999, REV_2001, REV_2011, REV_2013):
                 if not self._ignore_warnings:
                     msg = _WARNING_UNKNOWN_REVISION.format(self._rev_year)
                     warnings.warn(Warning(msg))
@@ -521,7 +525,7 @@ class Cfg:
         line_count = line_count + 1
 
         # Timestamp multiplication factor
-        if self._rev_year in (REV_1999, REV_2001, REV_2013):
+        if self._rev_year in (REV_1997, REV_1998, REV_1999, REV_2001, REV_2011, REV_2013):
             line = _eof_strip(cfg.readline())
             if len(line) > 0:
                 self._time_multiplier = float(line)
@@ -530,7 +534,9 @@ class Cfg:
             line_count = line_count + 1
 
         # time_code and local_code
-        if self._rev_year == REV_2013:
+        #if self._rev_year == REV_2013:
+        #Verifica se self._rev_year é igual a um dos valores no conjunto (REV_2011, REV_2013)
+        if self._rev_year in (REV_2011, REV_2013):
             line = _eof_strip(cfg.readline())
 
             if line:
@@ -586,13 +592,17 @@ class Comtrade:
         self._use_double_precision = kwargs.get("use_double_precision", False)
 
         # DAT file data
-        self._time_values = _preallocate_values(
-            "d" if self._use_double_precision else "f",
-            0,
-            self._use_numpy_arrays,
-        )
-        self._analog_values = []
-        self._status_values = []
+        try:
+            self._time_values = _preallocate_values(
+                "d" if self._use_double_precision else "f",
+                0,
+                self._use_numpy_arrays,
+            )
+            self._analog_values = []
+            self._status_values = []
+        except Exception as e:
+            print(f"Erro DAT file data:{e}")
+        
 
         # Additional CFF data (or additional comtrade files)
         self._hdr = None
@@ -881,7 +891,7 @@ class Comtrade:
 
     def _load_inf(self, inf_file, **kwargs):
         if os.path.exists(inf_file):
-            kwargs["encoding"] = kwargs.get("encoding", "utf-8")
+            kwargs["encoding"] = kwargs.get("encoding", "ANSI") #"utf-8")
             with open(inf_file, 'r', **kwargs) as file:
                 self._inf = _replace_sub(file.read())
                 if len(self._inf) == 0:
@@ -891,7 +901,7 @@ class Comtrade:
 
     def _load_hdr(self, hdr_file, **kwargs):
         if os.path.exists(hdr_file):
-            kwargs["encoding"] = kwargs.get("encoding", "utf-8")
+            kwargs["encoding"] = kwargs.get("encoding", "ANSI") #"utf-8")
             with open(hdr_file, 'r', **kwargs) as file:
                 self._hdr = _replace_sub(file.read())
                 if len(self._hdr) == 0:
@@ -910,7 +920,8 @@ class Comtrade:
             if current_value != chunk_delimiter:
                 current_chunk.append(current_value)
             else:
-                yield b"".join(current_chunk).decode("utf-8", errors="ignore").strip()
+                #yield b"".join(current_chunk).decode("utf-8", errors="ignore").strip()
+                yield b"".join(current_chunk).decode("ANSI", errors="ignore").strip()
                 current_chunk = []
 
     def _load_cff(self, cff_file_path: str, **kwargs):
@@ -1063,11 +1074,14 @@ class _DatReader:
         self.file_path = ""
         self._content = None
         self._cfg = None
-        self.time = _preallocate_values(
-            "d" if self._use_double_precision else "f",
-            0,
-            self._use_numpy_arrays,
-        )
+        try:
+            self.time = _preallocate_values(
+                "d" if self._use_double_precision else "f",
+                0,
+                self._use_numpy_arrays,
+            )
+        except Exception as e:
+            print(f"Erro DATReader:{e}")
         self.analog = []
         self.status = []
         self._total_samples = 0
@@ -1089,7 +1103,7 @@ class _DatReader:
             self._cfg = cfg
             self._preallocate()
             if "encoding" not in kwargs and self.read_mode != "rb":
-                kwargs["encoding"] = "utf-8"
+                kwargs["encoding"] = "ANSI" #"utf-8"
             with open(self.file_path, self.read_mode, **kwargs) as contents:
                 self.parse(contents)
         else:
@@ -1116,24 +1130,34 @@ class _DatReader:
         status_count = self._cfg.status_count
 
         # preallocate analog and status values
-        self.time = _preallocate_values(
-            "d" if self._use_double_precision else "f",
-            steps,
-            self._use_numpy_arrays,
-        )
-        self.analog = [None] * analog_count
-        self.status = [None] * status_count
-        # preallocate each channel values with zeros
-        for i in range(analog_count):
-            self.analog[i] = _preallocate_values(
+        try:
+            self.time = _preallocate_values(
                 "d" if self._use_double_precision else "f",
                 steps,
                 self._use_numpy_arrays,
             )
-        for i in range(status_count):
-            self.status[i] = _preallocate_values("i", steps,
-                                                 self._use_numpy_arrays)
-
+        except Exception as e:
+            print(f"Erro preallocate analog and status values:{e}")
+        self.analog = [None] * analog_count
+        self.status = [None] * status_count
+        # preallocate each channel values with zeros
+        try:
+            for i in range(analog_count):
+                self.analog[i] = _preallocate_values(
+                    "d" if self._use_double_precision else "f",
+                    steps,
+                    self._use_numpy_arrays,
+                )
+        except Exception as e:
+            print(f"Erro preallocate each channel values with zeros:{e}")
+        
+        try:
+            for i in range(status_count):
+                self.status[i] = _preallocate_values("i", steps,
+                                                    self._use_numpy_arrays)
+        except Exception as e:
+            print(f"Erro preallocate values{e}")
+        
     def _get_samp(self, n) -> float:
         """Get the sampling rate for a sample n (1-based index)."""
         # TODO: make tests.
@@ -1153,8 +1177,10 @@ class _DatReader:
             if sample_rate != 0.0:
                 return (n - 1) / sample_rate
             else:
-                raise ComtradeError("Missing timestamp and no sample rate "
-                                    "provided.")
+                #raise ComtradeError("Missing timestamp and no sample rate "
+                #                    "provided.")
+                # Use provided timestamp if it's not missing para não dar erro
+                return ts_value * time_base * time_multiplier
         else:
             # Use provided timestamp if it's not missing
             return ts_value * time_base * time_multiplier
